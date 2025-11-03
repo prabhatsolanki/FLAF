@@ -22,6 +22,40 @@ from FLAF.Common.Utilities import getCustomisationSplit
 # ROOT.EnableImplicitMT(1)
 ROOT.EnableThreadSafety()
 
+def _init_ff_runner():
+    ok = False
+    try:
+        lcg_view_path = "/cvmfs/sft.cern.ch/lcg/views/LCG_107/x86_64-el9-gcc11-opt"
+        onnx_lib_path = os.path.join(lcg_view_path, "lib64", "libonnxruntime.so")
+        if not os.path.exists(onnx_lib_path):
+            onnx_lib_path = os.path.join(lcg_view_path, "lib", "libonnxruntime.so")
+        if not os.path.exists(onnx_lib_path):
+            raise FileNotFoundError("libonnxruntime.so not found in LCG_107")
+
+        # Load lib and headers
+        ret = ROOT.gSystem.Load(onnx_lib_path)
+        if ret != 0:
+            raise RuntimeError(f"ROOT.gSystem.Load failed for {onnx_lib_path} (status={ret})")
+
+        onnx_header_path = os.path.join(lcg_view_path, "include", "onnxruntime/onnxruntime_cxx_api.h")
+        ROOT.gInterpreter.AddIncludePath(os.path.join(lcg_view_path, "include"))
+        ROOT.gInterpreter.Declare(f'#include "{onnx_header_path}"')
+
+        ff_header_path = os.path.join(os.environ['ANALYSIS_PATH'], "Analysis/include/FFNetONNX.h")
+        ROOT.gInterpreter.Declare(f'#include "{ff_header_path}"')
+
+        # Initialize global runner instance if onnx model exists
+        analysis_path = os.environ["ANALYSIS_PATH"]
+        onnx_model_path = os.path.join(analysis_path, "Analysis/data/model.onnx")
+        if os.path.exists(onnx_model_path):
+            ROOT.ff_interface.initialize_ff_runner(onnx_model_path)
+            ok = True
+            print(f"[FF] Global ONNX runner initialized from {onnx_model_path}")
+        else:
+            print("[FF] WARNING: model.onnx not found. FFs will not be applied.")
+    except Exception as e:
+        print(f"[FF] Initialization failed: {e}")
+    return ok
 
 def DefineBinnedColumn(hist_cfg_dict, var):
     x_bins = hist_cfg_dict[var]["x_bins"]
@@ -280,6 +314,9 @@ if __name__ == "__main__":
     setup.global_params["compute_unc_variations"] = (
         args.compute_unc_variations and process_group != "data"
     )
+    ff_runner_initialized = _init_ff_runner()
+    setup.global_params["run_ffs"] = ff_runner_initialized
+
     histTupleDef = Utilities.load_module(args.histTupleDef)
     cacheFiles = None
     if args.cacheFiles:
@@ -337,6 +374,10 @@ if __name__ == "__main__":
     else:
         print(f"NO HISTOGRAM CREATED!!!! dataset: {args.dataset} ")
         createVoidTree(args.outFile, f"Events")
-
+    
     executionTime = time.time() - startTime
     print("Execution time in seconds: " + str(executionTime))
+    try:
+        ROOT.ff_interface.finalize_ff_runner()
+    except Exception:
+        pass

@@ -89,11 +89,13 @@ def SaveSingleHistSet(
             )
             hist_list.append((model, unit_hist))
     else:
-        weight_name = f"weight_{unc}_{scale}" if unc != "Central" else "weight_Central"
+        if unc == "MLshape":
+            weight_name = "weight_MLshape_Central"  
+        else:
+            weight_name = f"weight_{unc}_{scale}" if unc != "Central" else "weight_Central"
+
         rdf_central = all_trees[treeName]
-        model, unit_hist = GetUnitBinHist(
-            rdf_central, var, filter_expr, weight_name, unc, scale
-        )
+        model, unit_hist = GetUnitBinHist(rdf_central, var, filter_expr, weight_name, unc, scale)
         hist_list.append((model, unit_hist))
 
     if hist_list:
@@ -101,7 +103,6 @@ def SaveSingleHistSet(
         if further_cut_name:
             key_tuple = key + (further_cut_name,)
         SaveHist(key_tuple, outFile, hist_list, var, unc, scale)
-
 
 def SaveTmpFileUnc(
     tmp_files,
@@ -117,42 +118,48 @@ def SaveTmpFileUnc(
         tmp_file = f"tmp_{var}_{unc}.root"
         tmp_file_root = ROOT.TFile(tmp_file, "RECREATE")
         is_shift_unc = unc in unc_cfg_dict["shape"]
-
         for scale in scales:
             for key, filter_to_apply_base in key_filter_dict.items():
+                ch, reg, cat = key
+                if unc == "MLshape":
+                    if reg != "OS_Iso":
+                        continue
+                    key_B = (ch, "OS_AntiIso", cat)
+                    if key_B not in key_filter_dict:
+                        continue
+                    filter_from_B = key_filter_dict[key_B]
+                    if further_cuts:
+                        for further_cut_name in further_cuts.keys():
+                            filt = f"{filter_from_B} && {further_cut_name}"
+                            SaveSingleHistSet(
+                                all_trees, var, filt,
+                                unc, "Central",  # MLshape has only Central
+                                key, tmp_file_root, False, treeName, further_cut_name
+                            )
+                    else:
+                        SaveSingleHistSet(
+                            all_trees, var, filter_from_B,
+                            unc, "Central",
+                            key, tmp_file_root, False, treeName
+                        )
+                    continue
+
                 filter_to_apply_final = filter_to_apply_base
                 if further_cuts:
                     for further_cut_name in further_cuts.keys():
-                        filter_to_apply_final = (
-                            f"{filter_to_apply_base} && {further_cut_name}"
-                        )
+                        filter_to_apply_final = f"{filter_to_apply_base} && {further_cut_name}"
                         SaveSingleHistSet(
-                            all_trees,
-                            var,
-                            filter_to_apply_final,
-                            unc,
-                            scale,
-                            key,
-                            tmp_file_root,
-                            is_shift_unc,
-                            treeName,
-                            further_cut_name,
+                            all_trees, var, filter_to_apply_final,
+                            unc, scale, key, tmp_file_root, is_shift_unc, treeName, further_cut_name
                         )
                 else:
                     SaveSingleHistSet(
-                        all_trees,
-                        var,
-                        filter_to_apply_final,
-                        unc,
-                        scale,
-                        key,
-                        tmp_file_root,
-                        is_shift_unc,
-                        treeName,
+                        all_trees, var, filter_to_apply_final,
+                        unc, scale, key, tmp_file_root, is_shift_unc, treeName
                     )
+
         tmp_file_root.Close()
         tmp_files.append(tmp_file)
-
 
 def CreateFakeStructure(outFile, setup, var, key_filter_dict, further_cuts):
     hist_cfg_dict = setup.hists
@@ -286,6 +293,11 @@ if __name__ == "__main__":
             {key: setup.global_params["scales"] for key in unc_cfg_dict["shape"]}
         )
     uncs_to_compute["Central"] = ["Central"]
+
+    if treeName in base_rdfs:
+        cols = set(map(str, base_rdfs[treeName].GetColumnNames()))
+        if "weight_MLshape_Central" in cols:
+            uncs_to_compute["MLshape"] = ["Central"]
 
     tmp_files = []
     if all_trees:

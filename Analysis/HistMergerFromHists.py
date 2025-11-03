@@ -13,7 +13,7 @@ if __name__ == "__main__":
 import FLAF.Common.Utilities as Utilities
 import FLAF.Common.Setup as Setup
 from FLAF.Common.HistHelper import *
-from FLAF.Analysis.QCD_estimation import *
+from FLAF.Analysis.QCD_estimation_MLFF import *
 
 import importlib
 
@@ -50,16 +50,15 @@ def fill_all_hists_dict(
     unc_source="Central",
     scale="Central",
 ):
+    # Only keep the requested variable name 
     for key_tuple, hist_map in items_dict.items():
-        for var, var_hist in hist_map.items():
-            if var != var_input:
-                print(
-                    f"var from hist map is {var} while var from hist dict is {var_input}"
-                )
-            final_key = (key_tuple, (unc_source, scale))
-            if final_key not in all_hist_dict_per_var_and_sampletype:
-                all_hist_dict_per_var_and_sampletype[final_key] = []
-            all_hist_dict_per_var_and_sampletype[final_key].append(var_hist)
+        if var_input not in hist_map:
+            continue
+        var_hist = hist_map[var_input]
+        final_key = (key_tuple, (unc_source, scale))
+        if final_key not in all_hist_dict_per_var_and_sampletype:
+            all_hist_dict_per_var_and_sampletype[final_key] = []
+        all_hist_dict_per_var_and_sampletype[final_key].append(var_hist)
 
 
 def MergeHistogramsPerType(all_hists_dict):
@@ -250,13 +249,20 @@ if __name__ == "__main__":
         inFile.Close()
 
         sample_type = sample_cfg_dict[sample_name]["process_name"]
-        if sample_type not in all_hists_dict.keys():
+        if sample_type not in all_hists_dict:
             all_hists_dict[sample_type] = {}
+        # ensure ML-shape exists too
+        ml_sample_type = f"{sample_type}_ML_shape"
+        if ml_sample_type not in all_hists_dict:
+            all_hists_dict[ml_sample_type] = {}
 
         all_items = load_all_items(inFile_path)
+        # nominal $var$ from config 
+        fill_all_hists_dict(all_items, all_hists_dict[sample_type], args.var)
+        # ML-shape $var$ lives as $var$_MLshape_Central
         fill_all_hists_dict(
-            all_items, all_hists_dict[sample_type], args.var
-        )  # to add: , unc_source="Central", scale="Central"
+            all_items, all_hists_dict[ml_sample_type], f"{args.var}_MLshape_Central"
+        )
     MergeHistogramsPerType(all_hists_dict)
 
     # here there should be the custom applications - e.g. GetBTagWeightDict, AddQCDInHistDict, etc.
@@ -282,6 +288,23 @@ if __name__ == "__main__":
             wantNegativeContributions=False,
         )
     """
+    # Add QCD
+    try:
+        errN, errV = AddQCDInHistDict(
+            args.var,
+            all_hists_dict,
+            channels,
+            all_categories,
+            args.uncSource,
+            list(all_hists_dict.keys()),  # present samples (including _ML_shape)
+            scales,
+            wantNegativeContributions=False,
+            mode="ml", 
+        )
+        print(f"[HistMerger] QCD ML added: errN={errN}, errV={errV}")
+    except Exception as e:
+        print(f"[HistMerger][QCD] WARNING: QCD computation failed: {e}")
+
     all_unc_dict = unc_cfg_dict["norm"].copy()
     all_unc_dict.update(unc_cfg_dict["shape"])
 
