@@ -124,7 +124,7 @@ def SaveTmpFileUnc(
                 if unc == "MLshape":
                     if reg != "OS_Iso":
                         continue
-                    key_B = (ch, "OS_AntiIso", cat)
+                    key_B = (ch, "OS_AntiIsoAny", cat)
                     if key_B not in key_filter_dict:
                         continue
                     filter_from_B = key_filter_dict[key_B]
@@ -276,7 +276,7 @@ if __name__ == "__main__":
     all_trees = {}
     for tree_name, rdf in base_rdfs.items():
         for var in vars_needed:
-            if var not in rdf.GetColumnNames():
+            if f'{var}_bin' not in rdf.GetColumnNames():
                 print(f"attenzione, {var} not in column names")
         for further_cut_name, (var_for_cut, cut_expr) in further_cuts.items():
             if further_cut_name not in rdf.GetColumnNames():

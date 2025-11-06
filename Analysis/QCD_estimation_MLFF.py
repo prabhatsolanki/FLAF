@@ -11,7 +11,7 @@ from FLAF.Common.Utilities import *
 
 
 # Backgrounds
-_DEFAULT_BKG = ["DY", "ST", "TT", "VV", "W", "ttH", "VH", "H"]
+_DEFAULT_BKG = ["DY", "ST", "TT", "VV", "WtoLNu", "W", "ttH", "VH", "H"]
 
 _REGIONS = {
     "A": "OS_Iso",
@@ -41,6 +41,7 @@ def _pick_sample(histograms, base_name, *, ml=False):
 
 
 def _auto_background_list(all_samples_list):
+    print(f"[QCD] Auto background list from samples: {all_samples_list}")
     out = []
     for s in all_samples_list:
         if s == "data" or s == "QCD":
@@ -49,7 +50,7 @@ def _auto_background_list(all_samples_list):
             continue
         if s.startswith("GluGlu"):   
             continue
-        if s.startswith("VBF"):   
+        if s.startswith("VBFHH"):   
             continue
         out.append(s)
     if not out:
@@ -209,6 +210,7 @@ def QCD_Estimation_ML_Full(histograms, all_samples_list, channel, category, uncN
     kA = _key(channel, _REGIONS["A"], category, uncName, scale)
 
     bkg = _auto_background_list(all_samples_list)
+    print(f"[QCD][ML] backgrounds used: {bkg}")
 
     try:
         h_final = _ml_shape_for_A(histograms, bkg, kA)

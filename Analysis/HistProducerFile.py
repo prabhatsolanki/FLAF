@@ -154,9 +154,39 @@ def GetHistogramDictFromDataframes(
             dataframe_new = dataframe_new.Filter(f"{cat}")
             histograms[(key_1, key_2)].append(
                 dataframe_new.Define("final_weight", total_weight_expression)
-                .Define("weight_for_hists", f"{weight_name}")
-                .Histo1D(GetModel(hist_cfg_dict, var), var, "weight_for_hists")
+                .Define("hist_weight_std", f"{weight_name}")
+                .Histo1D(GetModel(hist_cfg_dict, var), var, "hist_weight_std")
             )
+# These are derived from all OS events and weighted by ff_comb_weight.
+    if isCentral:
+        for ch in global_cfg_dict['channels_to_consider']:
+            if ch != 'tauTau': continue
+            for cat in all_categories:
+                ml_shape_key_1 = (ch, 'OS_Iso', cat)
+                ml_shape_key_2 = (f"{sample_type}_ML_shape", uncName, scale)
+                if (ml_shape_key_1, ml_shape_key_2) not in histograms:
+                    histograms[(ml_shape_key_1, ml_shape_key_2)] = []
+
+                weight_expr_ml = ""
+                if sample_type == 'data':
+                    weight_expr_ml = "ff_comb_weight"
+                else: 
+                    standard_mc_weight = analysis.GetWeight(ch, cat, boosted_categories)
+                    weight_expr_ml = f"({standard_mc_weight}) * ff_comb_weight"
+
+                for dataframe in dataframes:
+                    #btag_weight = analysis.GetBTagWeight(global_cfg_dict,cat,applyBtag=False) if sample_type!='data' else "1"
+                    #weight_expr_ml = "*".join([weight_expr_ml,btag_weight])
+                    df_ml_shape_base = dataframe.Filter(f"({ch} && {cat} && OS)")
+                    
+                    if furtherCut != '':
+                        df_ml_shape_base = df_ml_shape_base.Filter(furtherCut)
+                    if dataframe == dataframes[0]: 
+                        print(f"INFO: Creating '{ml_shape_key_2[0]}' histogram for {ch}/{cat} with weight '{weight_expr_ml}'")
+                    model = GetModel(hist_cfg_dict, var)
+                    histograms[(ml_shape_key_1, ml_shape_key_2)].append(
+                        df_ml_shape_base.Define("hist_weight_ml", weight_expr_ml).Histo1D(model, var, "hist_weight_ml")
+                    )
     return histograms
 
 
@@ -262,6 +292,40 @@ def GetShapeDataFrameDict(
 if __name__ == "__main__":
     import argparse
     import yaml
+    try:
+            lcg_view_path = "/cvmfs/sft.cern.ch/lcg/views/LCG_107/x86_64-el9-gcc11-opt"
+            ff_header_path = os.path.join(os.environ['ANALYSIS_PATH'], "Analysis/include/FFNetONNX.h")
+            onnx_include_path = os.path.join(lcg_view_path, "include")
+            onnx_lib_path = os.path.join(lcg_view_path, "lib64", "libonnxruntime.so")
+            if not os.path.exists(onnx_lib_path):
+                onnx_lib_path = os.path.join(lcg_view_path, "lib", "libonnxruntime.so")
+            onnx_header_path = os.path.join(lcg_view_path, "include", "onnxruntime/onnxruntime_cxx_api.h")
+            print(f"Attempting to load ONNX Runtime library from: {onnx_lib_path}")
+            if not os.path.exists(onnx_lib_path):
+                raise FileNotFoundError(f"libonnxruntime.so not found at the expected LCG path.")
+                
+            load_result = ROOT.gSystem.Load(onnx_lib_path)
+            if load_result != 0:
+                raise RuntimeError(f"ROOT.gSystem.Load failed for libonnxruntime.so with status {load_result}. ")
+            print("ONNX Runtime library loaded successfully.")
+
+            print(f"Declaring ONNX Runtime header from: {onnx_header_path}")
+            ROOT.gInterpreter.Declare(f'#include "{onnx_header_path}"')
+            print(f"Adding LCG include path to ROOT: {onnx_include_path}")
+            if not os.path.isdir(onnx_include_path):
+                raise FileNotFoundError("ONNX include directory not found at the expected LCG path.")
+            ROOT.gInterpreter.AddIncludePath(onnx_include_path)
+            print(f"Declaring FFNetONNX header from: {ff_header_path}")
+            ROOT.gInterpreter.Declare(f'#include "{ff_header_path}"')
+            print("All headers declared successfully.")
+
+    except (KeyError, FileNotFoundError, RuntimeError) as e:
+            print("\n" + "="*60)
+            print("CRITICAL ERROR during ONNX Runtime setup.")
+            print(f"Error: {e}")
+            print("Fake Factor calculation will not be available. Exiting.")
+            print("="*60)
+            sys.exit(1)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--inFile", required=True, type=str)
@@ -321,6 +385,21 @@ if __name__ == "__main__":
     ):
         ROOT.gInterpreter.Declare(f'#include "include/KinFitNamespace.h"')
 
+    ff_runner_initialized = False
+    try:
+        analysis_path = os.environ['ANALYSIS_PATH']
+        onnx_model_path = os.path.join(analysis_path, "Analysis/data/model.onnx")
+        
+        if os.path.exists(onnx_model_path):
+            ROOT.ff_interface.initialize_ff_runner(onnx_model_path)
+            ff_runner_initialized = True
+            print("Global C++ ONNX Runner instance created successfully.")
+        else:
+            print("WARNING: ONNX model file not found. FFs will not be applied.")
+
+    except Exception as e:
+        print(f"ERROR: Failed to initialize C++ ONNX Runner. Error: {e}")
+
     global_cfg_dict["channels_to_consider"] = args.channels.split(",")
     # print(global_cfg_dict['channels_to_consider'])
     # central hist definition
@@ -370,6 +449,8 @@ if __name__ == "__main__":
         if analysis_import == "Analysis.hh_bbww":
             kwargset = {}
         if analysis_import == "Analysis.hh_bbtautau":
+            if ff_runner_initialized:
+                kwargset['run_ffs'] = True
             kwargset["deepTauVersion"] = args.deepTauVersion
             kwargset["bTagWPString"] = "Medium"
             kwargset["pNetWPstring"] = "Loose"

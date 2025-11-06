@@ -299,7 +299,7 @@ if __name__ == "__main__":
             list(all_hists_dict.keys()),  # present samples (including _ML_shape)
             scales,
             wantNegativeContributions=False,
-            mode="ml", 
+            mode="abcd", 
         )
         print(f"[HistMerger] QCD ML added: errN={errN}, errV={errV}")
     except Exception as e:

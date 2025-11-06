@@ -46,7 +46,7 @@ def _init_ff_runner():
 
         # Initialize global runner instance if onnx model exists
         analysis_path = os.environ["ANALYSIS_PATH"]
-        onnx_model_path = os.path.join(analysis_path, "Analysis/data/model.onnx")
+        onnx_model_path = os.path.join(analysis_path, "Analysis/data/model_2022EE.onnx")
         if os.path.exists(onnx_model_path):
             ROOT.ff_interface.initialize_ff_runner(onnx_model_path)
             ok = True
