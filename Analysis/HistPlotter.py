@@ -8,7 +8,8 @@ if __name__ == "__main__":
     sys.path.append(os.environ['ANALYSIS_PATH'])
 
 import FLAF.Common.Utilities as Utilities
-from FLAF.Analysis.HistHelper import *
+import FLAF.Common.Setup as Setup
+from FLAF.Common.HistHelper import *
 from FLAF.Analysis.HistMerger import *
 
 def GetHistName(sample_name, sample_type, uncName, unc_scale,global_cfg_dict):

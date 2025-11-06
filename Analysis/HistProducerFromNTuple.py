@@ -46,7 +46,7 @@ def SaveHist(key_tuple, outFile, hist_list, hist_name, unc, scale):
                 bin_error = unit_hist.GetBinError(i)
                 hist.SetBinContent(i, bin_content)
                 hist.SetBinError(i, bin_error)
-                nentries += unit_hist.GetEntries()
+            nentries += unit_hist.GetEntries()
             merged_hist.Add(hist)
 
     merged_hist.SetEntries(nentries)
@@ -117,7 +117,8 @@ def SaveTmpFileUnc(
     for unc, scales in uncs_to_compute.items():
         tmp_file = f"tmp_{var}_{unc}.root"
         tmp_file_root = ROOT.TFile(tmp_file, "RECREATE")
-        is_shift_unc = unc in unc_cfg_dict["shape"]
+        is_shift_unc = unc in unc_cfg_dict["shape"].keys()
+
         for scale in scales:
             for key, filter_to_apply_base in key_filter_dict.items():
                 ch, reg, cat = key
@@ -189,6 +190,7 @@ if __name__ == "__main__":
     parser.add_argument("inputFiles", nargs="+", type=str)
     parser.add_argument("--period", required=True, type=str)
     parser.add_argument("--outFile", required=True, type=str)
+    parser.add_argument("--sample_name", required=True, type=str)
     parser.add_argument("--customisations", type=str, default=None)
     parser.add_argument("--channels", type=str, default=None)
     parser.add_argument("--var", type=str, default=None)
@@ -269,30 +271,38 @@ if __name__ == "__main__":
 
     variables = setup.global_params["variables"]
     vars_needed = set(variables)
-    for further_cut_name, (var_for_cut, _) in further_cuts.items():
-        if var_for_cut:
-            vars_needed.add(var_for_cut)
+    for further_cut_name, (vars_for_cut, _) in further_cuts.items():
+        for var_for_cut in vars_for_cut:
+            if var_for_cut:
+                vars_needed.add(var_for_cut)
 
     all_trees = {}
     for tree_name, rdf in base_rdfs.items():
         for var in vars_needed:
             if f'{var}_bin' not in rdf.GetColumnNames():
                 print(f"attenzione, {var} not in column names")
-        for further_cut_name, (var_for_cut, cut_expr) in further_cuts.items():
+        for further_cut_name, (vars_for_cut, cut_expr) in further_cuts.items():
             if further_cut_name not in rdf.GetColumnNames():
                 rdf = rdf.Define(further_cut_name, cut_expr)
         all_trees[tree_name] = rdf
 
     uncs_to_compute = {}
-    if args.compute_rel_weights:
-        uncs_to_compute.update(
-            {key: setup.global_params["scales"] for key in unc_cfg_dict["norm"].keys()}
-        )
-    if args.compute_unc_variations:
-        uncs_to_compute.update(
-            {key: setup.global_params["scales"] for key in unc_cfg_dict["shape"]}
-        )
     uncs_to_compute["Central"] = ["Central"]
+    if args.sample_name != "data":
+        if args.compute_rel_weights:
+            uncs_to_compute.update(
+                {
+                    key: setup.global_params["scales"]
+                    for key in unc_cfg_dict["norm"].keys()
+                }
+            )
+        if args.compute_unc_variations:
+            uncs_to_compute.update(
+                {
+                    key: setup.global_params["scales"]
+                    for key in unc_cfg_dict["shape"].keys()
+                }
+            )
 
     if treeName in base_rdfs:
         cols = set(map(str, base_rdfs[treeName].GetColumnNames()))

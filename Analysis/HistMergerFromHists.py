@@ -48,17 +48,20 @@ def fill_all_hists_dict(
     all_hist_dict_per_var_and_sampletype,
     var_input,
     unc_source="Central",
-    scale="Central",
 ):
-    # Only keep the requested variable name 
+    var_check = f"{var_input}"
     for key_tuple, hist_map in items_dict.items():
-        if var_input not in hist_map:
-            continue
-        var_hist = hist_map[var_input]
-        final_key = (key_tuple, (unc_source, scale))
-        if final_key not in all_hist_dict_per_var_and_sampletype:
-            all_hist_dict_per_var_and_sampletype[final_key] = []
-        all_hist_dict_per_var_and_sampletype[final_key].append(var_hist)
+        for var, var_hist in hist_map.items():
+            scales = ["Up", "Down"] if unc_source != "Central" else ["Central"]
+            for scale in scales:
+                if unc_source != "Central":
+                    var_check = f"{var_input}_{unc_source}_{scale}"
+                if var != var_check:
+                    continue
+                final_key = (key_tuple, (unc_source, scale))
+                if final_key not in all_hist_dict_per_var_and_sampletype:
+                    all_hist_dict_per_var_and_sampletype[final_key] = []
+                all_hist_dict_per_var_and_sampletype[final_key].append(var_hist)
 
 
 def MergeHistogramsPerType(all_hists_dict):
@@ -258,10 +261,10 @@ if __name__ == "__main__":
 
         all_items = load_all_items(inFile_path)
         # nominal $var$ from config 
-        fill_all_hists_dict(all_items, all_hists_dict[sample_type], args.var)
+        fill_all_hists_dict(all_items, all_hists_dict[sample_type], args.var, args.uncSource)
         # ML-shape $var$ lives as $var$_MLshape_Central
         fill_all_hists_dict(
-            all_items, all_hists_dict[ml_sample_type], f"{args.var}_MLshape_Central"
+            all_items, all_hists_dict[ml_sample_type], f"{args.var}_MLshape_Central", args.uncSource
         )
     MergeHistogramsPerType(all_hists_dict)
 
@@ -327,13 +330,11 @@ if __name__ == "__main__":
                     continue
                 if uncName not in all_unc_dict.keys():
                     print(f"unknown unc name {uncName}")
-                additional_name += (
-                    f"""_{all_unc_dict[uncName]["name"].format(uncScale)}"""
-                )
+                hist_name += f"""_{all_unc_dict[uncName]["name"].format(uncScale)}"""
             else:
                 if uncScale != "Central":
                     continue
-            # print(f"setting hist title and name to {hist_name}")
+
             hist.SetTitle(hist_name)
             hist.SetName(hist_name)
             dir_ptr.WriteTObject(hist, hist_name, "Overwrite")
